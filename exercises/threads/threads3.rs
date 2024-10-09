@@ -3,7 +3,7 @@
 // Execute `rustlings hint threads3` or use the `hint` watch subcommand for a
 // hint.
 
-// I AM NOT DONE
+// I AM DONE
 
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -26,31 +26,41 @@ impl Queue {
     }
 }
 
-fn send_tx(q: Queue, tx: mpsc::Sender<u32>) -> () {
-    let qc = Arc::new(q);
-    let qc1 = Arc::clone(&qc);
-    let qc2 = Arc::clone(&qc);
-
-    thread::spawn(move || {
+fn send_tx(q: Arc<Queue>, tx: mpsc::Sender<u32>) {
+    let qc1 = Arc::clone(&q);
+    let tx1 = tx.clone(); // Clone the Sender for the first thread
+    let thread1 = thread::spawn(move || {
         for val in &qc1.first_half {
             println!("sending {:?}", val);
-            tx.send(*val).unwrap();
+            if let Err(_) = tx1.send(*val) {
+                println!("Receiver dropped");
+                return; // Exit if the receiver is dropped
+            }
             thread::sleep(Duration::from_secs(1));
         }
     });
 
-    thread::spawn(move || {
+    let qc2 = Arc::clone(&q);
+    let tx2 = tx; // Use the original Sender for the second thread
+    let thread2 = thread::spawn(move || {
         for val in &qc2.second_half {
             println!("sending {:?}", val);
-            tx.send(*val).unwrap();
+            if let Err(_) = tx2.send(*val) {
+                println!("Receiver dropped");
+                return; // Exit if the receiver is dropped
+            }
             thread::sleep(Duration::from_secs(1));
         }
     });
+
+    // Wait for both threads to finish
+    thread1.join().unwrap();
+    thread2.join().unwrap();
 }
 
 fn main() {
     let (tx, rx) = mpsc::channel();
-    let queue = Queue::new();
+    let queue = Arc::new(Queue::new()); // Use Arc to share Queue
     let queue_length = queue.length;
 
     send_tx(queue, tx);
@@ -62,5 +72,6 @@ fn main() {
     }
 
     println!("total numbers received: {}", total_received);
-    assert_eq!(total_received, queue_length)
+    assert_eq!(total_received, queue_length);
 }
+
